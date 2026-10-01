@@ -1,10 +1,14 @@
-# sourced-resolver with Docker Compose, its store and key in a volume.
-# Put TLS in front (deploy/nginx.conf or deploy/Caddyfile). Set
-# RESOLVER_NAME and PUBLISHER, e.g. in a .env file.
+# sourced-resolver with Docker Compose. Put TLS in front (deploy/nginx.conf
+# or deploy/Caddyfile). Settings come from the environment or a .env file
+# next to this file:
+#   RESOLVER_NAME  the resolver's domain, e.g. resolver.example.net (required)
+#   PUBLISHER      the one publisher it serves, e.g. example.org (required)
+#   UPSTREAM_PORT  the localhost port to listen on (default 8080)
+#   DATA_DIR_HOST  where its store and key live on the host (default: a
+#                  volume); must be writable by uid 10001
 services:
   resolver:
-    build:
-      context: ..
+    build: ..
     command:
       - serve
       - -name=${RESOLVER_NAME:?set RESOLVER_NAME}
@@ -14,13 +18,15 @@ services:
       - -only
       - -client-ip-header=X-Real-IP
     ports:
-      - "127.0.0.1:${PORT:-8080}:8080"
+      - "127.0.0.1:${UPSTREAM_PORT:-8080}:8080"
     volumes:
-      - resolver-data:/data
+      - ${DATA_DIR_HOST:-resolver-data}:/data
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 512m
     restart: unless-stopped
 
 volumes:
