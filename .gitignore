@@ -1,0 +1,15 @@
+# Build output
+/bin/
+
+# Go test binaries (pkg.test), but not directories named like sample
+# sites (daily-herald.test/)
+*.test
+!*.test/
+
+# Go profiling and coverage
+*.out
+coverage.*
+
+# Local environment
+.env
+.DS_Store
