@@ -1,12 +1,10 @@
 # sourced-resolver with Docker Compose, its store and key in a volume.
-# Put TLS in front (deploy/nginx.conf or deploy/Caddyfile). Until the
-# projects are published, the image builds from Dev/ (the build context
-# below); set RESOLVER_NAME and PUBLISHER, e.g. in a .env file.
+# Put TLS in front (deploy/nginx.conf or deploy/Caddyfile). Set
+# RESOLVER_NAME and PUBLISHER, e.g. in a .env file.
 services:
   resolver:
     build:
-      context: ../..
-      dockerfile: resolver/Dockerfile
+      context: ..
     command:
       - serve
       - -name=${RESOLVER_NAME:?set RESOLVER_NAME}

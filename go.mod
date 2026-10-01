@@ -2,18 +2,11 @@ module github.com/sourcednet/resolver
 
 go 1.24
 
-// Sibling projects, developed side by side in Dev/ until they are published.
-replace github.com/sourcednet/core => ../core
-
-replace github.com/sourcednet/publisher => ../publisher
-
-replace github.com/sourcednet/testkit => ../testkit
-
 require (
 	github.com/modelcontextprotocol/go-sdk v1.3.1
-	github.com/sourcednet/core v0.0.0-00010101000000-000000000000
-	github.com/sourcednet/publisher v0.0.0-00010101000000-000000000000
-	github.com/sourcednet/testkit v0.0.0-00010101000000-000000000000
+	github.com/sourcednet/core v0.1.0
+	github.com/sourcednet/publisher v0.1.0
+	github.com/sourcednet/testkit v0.1.0
 	golang.org/x/text v0.28.0
 	modernc.org/sqlite v1.38.2
 )
