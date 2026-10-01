@@ -14,7 +14,10 @@ make            # lint, test, build: bin/sourced-resolver
 sourced-resolver serve -name resolver.example.net -publisher example.org -data ./resolver-data
 ```
 
-- **Plain HTTP** on `-addr` (default `:8080`): put TLS in front (nginx, Caddy).
+- **Plain HTTP** on `-addr` (default `:8080`): put TLS in front. `deploy/` has examples: `nginx.conf`, `Caddyfile`, and `compose.yaml`. MCP may answer as a server-sent event stream, so the proxy must not buffer `/mcp` and must allow long reads.
+- **`-only`** serves only the `-publisher` domains: requests about any other get `403`, and the resolver never contacts it. Use it for a public resolver set up for given sites.
+- **`-rate` and `-burst`** limit each client (default 5 requests per second, bursts of 20; `-rate 0` turns it off), answering `429` with `Retry-After`. Behind a proxy, `-client-ip-header X-Real-IP` takes the client's address from the proxy's header; set it only when a trusted proxy is in front.
+- **Outbound safety:** the resolver refuses to connect to private, loopback, link-local, and other non-public addresses (`-allow-private` for test networks only), ignores proxy settings, and follows redirects only within the same host and over HTTPS.
 - **MCP** at `/mcp`: add it to Claude Code with `claude mcp add --transport http <name> https://resolver.example.net/mcp`.
 - **`-ranker`** orders passages for queries and search: `bm25` (default) or `bm25-lead`, which favors a page's opening.
 - **`-index`** picks the passage index: `windows` (default) or `winnowed`, smaller but slightly worse at short quotes. Changing it rebuilds the index in the background.

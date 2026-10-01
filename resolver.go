@@ -47,6 +47,10 @@ type Config struct {
 	// Store keeps what the resolver verifies; nil opens a Store (SQLite
 	// and chunk files) in DataDir. The resolver closes it.
 	Store ContentStore
+	// Publishers, if set, are the only publishers the resolver serves:
+	// requests about any other domain fail with ErrNotServed, and it never
+	// contacts them. Empty serves any publisher.
+	Publishers []string
 	// Operator and RetentionPolicy are published in resolver.json.
 	Operator, RetentionPolicy string
 	// MCPPath, if set, is where the resolver's MCP endpoint is served, and
@@ -245,8 +249,23 @@ func (h storeHooks) CachedBundle(id string) (*core.Bundle, bool) {
 
 // AddPublisher starts tracking a publisher; it is synced on the next poll.
 func (r *Resolver) AddPublisher(ctx context.Context, domain string) error {
+	if err := r.serves(domain); err != nil {
+		return err
+	}
 	_, err := r.store.AddPublisher(ctx, domain)
 	return err
+}
+
+// ErrNotServed means a request is about a publisher this resolver doesn't
+// serve (Config.Publishers).
+var ErrNotServed = errors.New("this resolver doesn't serve that publisher")
+
+// serves reports whether the resolver serves a publisher's domain.
+func (r *Resolver) serves(domain string) error {
+	if len(r.cfg.Publishers) == 0 || slices.ContainsFunc(r.cfg.Publishers, func(p string) bool { return strings.EqualFold(p, domain) }) {
+		return nil
+	}
+	return fmt.Errorf("%w: %s (it serves %s)", ErrNotServed, domain, strings.Join(r.cfg.Publishers, ", "))
 }
 
 func (r *Resolver) syncLock(domain string) *sync.Mutex {
@@ -265,6 +284,9 @@ func (r *Resolver) syncLock(domain string) *sync.Mutex {
 // change feed records what changed, and withdrawals purge text.
 func (r *Resolver) Sync(ctx context.Context, domain string) error {
 	domain = strings.ToLower(domain)
+	if err := r.serves(domain); err != nil {
+		return err
+	}
 	lock := r.syncLock(domain)
 	lock.Lock()
 	defer lock.Unlock()
@@ -431,6 +453,9 @@ var ErrRateLimited = errors.New("announced too recently")
 // that publisher soon, in the background. The announce carries no content.
 func (r *Resolver) Announce(domain string) error {
 	domain = strings.ToLower(domain)
+	if err := r.serves(domain); err != nil {
+		return err
+	}
 	if !r.policy.AcceptAnnounce(domain, r.cfg.Now()) {
 		return ErrRateLimited
 	}
@@ -458,6 +483,11 @@ func (r *Resolver) WaitIdle() { r.wg.Wait() }
 // from the store; after it, it asks the publisher. If the publisher can't be
 // reached, it serves what it has, with the older time (serve-stale).
 func (r *Resolver) Page(ctx context.Context, pageURL string) (*verifier.Page, time.Time, error) {
+	if pub, err := hostOf(pageURL); err == nil {
+		if err := r.serves(pub); err != nil {
+			return nil, time.Time{}, err
+		}
+	}
 	id, checked, ok, err := r.store.Current(ctx, pageURL)
 	if err != nil {
 		return nil, time.Time{}, err

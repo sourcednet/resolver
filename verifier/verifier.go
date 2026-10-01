@@ -116,7 +116,7 @@ func New(client *http.Client, opts ...Option) *Verifier {
 		client = http.DefaultClient
 	}
 	v := &Verifier{
-		http:   client,
+		http:   sameHostHTTPS(client),
 		keyTTL: 5 * time.Minute,
 		now:    time.Now,
 		keys:   map[string]cachedKeys{},
@@ -609,14 +609,36 @@ func (v *Verifier) request(ctx context.Context, method, rawURL string, hdr http.
 		return nil, nil, 0, err
 	}
 	defer resp.Body.Close()
-	if resp.Request != nil && !strings.EqualFold(resp.Request.URL.Hostname(), req.URL.Hostname()) {
-		return nil, nil, 0, fmt.Errorf("%s redirected to another host (%s)", rawURL, resp.Request.URL.Host)
-	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, resp.Header, resp.StatusCode, nil
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	return b, resp.Header, resp.StatusCode, err
+}
+
+// ErrRedirect means a publisher's server redirected to another host or to
+// plain HTTP. Its files must come from its own domain over HTTPS, so the
+// redirect isn't followed.
+var ErrRedirect = errors.New("redirect to another host or to plain HTTP")
+
+// sameHostHTTPS returns a copy of client that follows redirects only within
+// the same host and over HTTPS, refusing others before any request is made.
+func sameHostHTTPS(client *http.Client) *http.Client {
+	c := *client
+	next := client.CheckRedirect
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if req.URL.Scheme != "https" || !strings.EqualFold(req.URL.Hostname(), via[0].URL.Hostname()) {
+			return fmt.Errorf("%w: %s to %s", ErrRedirect, via[0].URL, req.URL)
+		}
+		if next != nil {
+			return next(req, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return &c
 }
 
 // short shortens an ID for logs.

@@ -1,0 +1,17 @@
+# sourced-resolver behind Caddy, which gets and renews the certificate
+# itself. Replace resolver.example.net with the resolver's name.
+#
+#   sourced-resolver serve -name resolver.example.net -addr 127.0.0.1:8080 \
+#     -data /var/lib/sourced-resolver -publisher example.org -only \
+#     -client-ip-header X-Real-IP
+
+resolver.example.net {
+	request_body {
+		max_size 128KB
+	}
+	reverse_proxy 127.0.0.1:8080 {
+		header_up X-Real-IP {remote_host}
+		# MCP may answer as a server-sent event stream: pass it on at once.
+		flush_interval -1
+	}
+}

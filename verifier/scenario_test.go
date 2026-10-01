@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -470,5 +471,23 @@ func TestChaosUnreachablePublisher(t *testing.T) {
 				t.Fatalf("after reset: %s", p.Reason)
 			}
 		})
+	}
+}
+
+// TestRedirectsStayOnTheHost: a publisher's files must come from its own
+// domain over HTTPS, so a redirect elsewhere is refused before it is
+// followed.
+func TestRedirectsStayOnTheHost(t *testing.T) {
+	n := testnet.Standard(t)
+	n.AddHandler("moved.test", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://daily-herald.test"+r.URL.Path, http.StatusFound)
+	}))
+	before := n.Requests("daily-herald.test", "")
+	_, err := verifier.New(n.Client()).Fetch(ctx, "https://moved.test/news/2026/09/bridge-reopens.html")
+	if !errors.Is(err, verifier.ErrRedirect) {
+		t.Fatalf("got %v, want ErrRedirect", err)
+	}
+	if n.Requests("daily-herald.test", "") != before {
+		t.Fatal("the redirect was followed to the other host")
 	}
 }

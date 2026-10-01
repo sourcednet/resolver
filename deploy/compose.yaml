@@ -1,0 +1,29 @@
+# sourced-resolver with Docker Compose, its store and key in a volume.
+# Put TLS in front (deploy/nginx.conf or deploy/Caddyfile). Until the
+# projects are published, the image builds from Dev/ (the build context
+# below); set RESOLVER_NAME and PUBLISHER, e.g. in a .env file.
+services:
+  resolver:
+    build:
+      context: ../..
+      dockerfile: resolver/Dockerfile
+    command:
+      - serve
+      - -name=${RESOLVER_NAME:?set RESOLVER_NAME}
+      - -addr=:8080
+      - -data=/data
+      - -publisher=${PUBLISHER:?set PUBLISHER}
+      - -only
+      - -client-ip-header=X-Real-IP
+    ports:
+      - "127.0.0.1:${PORT:-8080}:8080"
+    volumes:
+      - resolver-data:/data
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+volumes:
+  resolver-data: {}

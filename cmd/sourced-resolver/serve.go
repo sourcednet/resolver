@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/sourcednet/resolver/cmdutil"
+	"github.com/sourcednet/resolver/ratelimit"
 	"io"
 	"net"
 	"net/http"
@@ -29,6 +30,10 @@ func cmdServe(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	freshness := fs.Duration("freshness", 5*time.Minute, "how long a page's current record is trusted before rechecking; 0 always rechecks")
 	poll := fs.Duration("poll", 5*time.Minute, "manifest poll interval for publishers that send no max-age")
 	ca := fs.String("ca", "", "dev only: also trust this PEM certificate authority when reaching publishers")
+	rate := fs.Float64("rate", 5, "requests per second each client may make on average (0: no limit)")
+	burst := fs.Int("burst", 20, "requests each client may make at once")
+	ipHeader := fs.String("client-ip-header", "", "take the client's address from this header, set by a trusted proxy in front (e.g. X-Real-IP from nginx)")
+	only := fs.Bool("only", false, "serve only the -publisher domains: refuse requests about any other, and never contact it")
 	allowPrivate := fs.Bool("allow-private", false, "dev only: allow publishers on private and loopback addresses")
 	operator := fs.String("operator", "", "operator name published in resolver.json")
 	logs := cmdutil.AddLogFlags(fs, "also write logs to this file")
@@ -40,6 +45,13 @@ func cmdServe(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	if *name == "" || fs.NArg() != 0 {
 		fs.Usage()
 		return 2
+	}
+	var served []string
+	if *only {
+		if len(pubs) == 0 {
+			return cmdutil.Fail(stderr, errors.New("-only needs at least one -publisher"))
+		}
+		served = pubs
 	}
 	ranker, err := rank.Named(*rankerName)
 	if err != nil {
@@ -68,7 +80,7 @@ func cmdServe(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	r, err := resolver.New(resolver.Config{
 		Name: *name, DataDir: *data, HTTP: client,
 		Freshness: *freshness, PollInterval: *poll,
-		Operator: *operator, RetentionPolicy: *retention, Logger: log, MCPPath: cmdutil.MCPPath, Ranker: ranker, Index: index,
+		Operator: *operator, RetentionPolicy: *retention, Logger: log, MCPPath: cmdutil.MCPPath, Ranker: ranker, Index: index, Publishers: served,
 	})
 	if err != nil {
 		return cmdutil.Fail(stderr, err)
@@ -88,7 +100,11 @@ func cmdServe(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	if err != nil {
 		return cmdutil.Fail(stderr, err)
 	}
-	srv := &http.Server{Handler: cmdutil.Handler(r, version, log), ReadHeaderTimeout: 10 * time.Second}
+	handler := cmdutil.Handler(r, version, log)
+	if *rate > 0 {
+		handler = ratelimit.New(*rate, *burst).Handler(handler, *ipHeader)
+	}
+	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)

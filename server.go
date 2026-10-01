@@ -143,6 +143,11 @@ func (r *Resolver) ResolveAnswer(ctx context.Context, cite string) (*ResolveAnsw
 	if cite == "" {
 		return nil, badInput("missing citation")
 	}
+	if c, err := core.ParseCitation(cite); err == nil {
+		if err := r.serves(c.Publisher); err != nil {
+			return nil, err
+		}
+	}
 	res, err := r.v.Resolve(ctx, cite)
 	if err != nil {
 		return nil, err
@@ -277,6 +282,8 @@ func writeResult(w http.ResponseWriter, a any, err error) {
 	switch {
 	case errors.Is(err, ErrBadInput):
 		writeError(w, http.StatusBadRequest, err)
+	case errors.Is(err, ErrNotServed):
+		writeError(w, http.StatusForbidden, err)
 	case err != nil:
 		writeError(w, http.StatusBadGateway, err)
 	default:
@@ -346,6 +353,8 @@ func (r *Resolver) handleAnnounce(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	switch err := r.Announce(body.Domain); {
+	case errors.Is(err, ErrNotServed):
+		writeError(w, http.StatusForbidden, err)
 	case errors.Is(err, ErrRateLimited):
 		writeError(w, http.StatusTooManyRequests, err)
 	case err != nil:

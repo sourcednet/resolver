@@ -559,3 +559,32 @@ func TestPluggableStoreAndSyncPolicy(t *testing.T) {
 		t.Fatalf("announce the policy refuses: %v", err)
 	}
 }
+
+func TestServesOnlyListedPublishers(t *testing.T) {
+	n := testnet.Standard(t)
+	r, err := resolver.New(resolver.Config{
+		Name: "resolver.test", DataDir: t.TempDir(), HTTP: n.Client(), Publishers: []string{herald},
+		Logger: slog.New(slog.DiscardHandler),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	n.AddHandler("resolver.test", r.Handler())
+	c := &resolver.Client{Base: "https://resolver.test", HTTP: n.Client()}
+
+	if a, _, err := c.FetchAnswer(ctx, resolver.FetchRequest{URL: bridgeURL}); err != nil || a.Verification != verifier.Verified {
+		t.Fatalf("listed publisher: %+v, %v", a, err)
+	}
+	before := n.Requests(library, "")
+	var apiErr *resolver.APIError
+	if _, _, err := c.FetchAnswer(ctx, resolver.FetchRequest{URL: "https://" + library + "/guides/book-care.html"}); !errors.As(err, &apiErr) || apiErr.Status != http.StatusForbidden {
+		t.Fatalf("unlisted publisher: %v", err)
+	}
+	if err := r.Announce(library); !errors.Is(err, resolver.ErrNotServed) {
+		t.Fatalf("announce from an unlisted publisher: %v", err)
+	}
+	if n.Requests(library, "") != before {
+		t.Fatal("the resolver contacted a publisher it doesn't serve")
+	}
+}
